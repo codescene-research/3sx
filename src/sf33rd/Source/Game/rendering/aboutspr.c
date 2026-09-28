@@ -16,6 +16,8 @@
 #include "sf33rd/Source/Game/stage/bg_data.h"
 #include "sf33rd/Source/Game/system/work_sys.h"
 
+#include <SDL3/SDL.h>
+
 MultiTexture mts[24];
 MTS_OK mts_ok[24];
 WORK dmwk_moji;
@@ -297,14 +299,11 @@ static void dispatch_trans_mode(WORK* wk, s16 bsy) {
 
 void Mtrans_use_trans_mode(WORK* wk, s16 bsy) {
     if (mts_ok[wk->my_mts].be == 0) {
-        // A display request was received before MTS initialization. MTS number: %d\n
         // Original text: "ＭＴＳの初期化前に表示要求が入りました。ＭＴＳ番号：%d\n"
-        // For some reason MWCC (or mwccgap) removes a single byte from the string, resulting in a mismatch.
-        // single byte.
-        flLogOut("\x82\x6c\x82\x73\x82\x72\x82\xcc\x8f\x89\x8a\xfa\x89\xbb\x91\x4f\x82\xc9\x95\x5c\x8e\xa6\x97\x76\x8b"
-                 "\x81\x82\xaa\x93\xfc\x82\xe8\x82\xdc\x82\xb5\x82\xbd\x81\x42\x82\x6c\x82\x73\x82\x72\x94\xd4\x8d\x86"
-                 "\x81\x46\x25\x64\x0a",
-                 wk->my_mts);
+        // On the PS2 this was only a debug print and the draw was skipped. The port's flLogOut is fatal,
+        // so log and skip here instead: a screen change can release a slot after a shadow was queued in
+        // the same frame (the attract loop's ranking screen releases slot 17).
+        SDL_Log("Mtrans_use_trans_mode: display request before MTS initialization, MTS number %d", wk->my_mts);
         return;
     }
 
