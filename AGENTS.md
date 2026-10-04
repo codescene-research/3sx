@@ -209,11 +209,11 @@ This checkout is a **fork**, and the two remotes are easy to confuse:
 
 | Remote | Repository | Use |
 | --- | --- | --- |
-| `origin` | `mrksbrg/3sx` | **This is the target for everything.** |
+| `origin` | `codescene-research/3sx` | **This is the target for everything.** |
 | `upstream` | `crowded-street/3sx` | The public project. Read-only, as far as agents are concerned. |
 
 > [!WARNING]
-> **Every pull request must target `mrksbrg/3sx`, base `main`.**
+> **Every pull request must target `codescene-research/3sx`, base `main`.**
 > Never open one against `crowded-street/3sx`.
 
 This is not a hypothetical mistake. GitHub's "Compare & pull request" button and
@@ -222,13 +222,13 @@ so the wrong target is the *default* and it has already happened once. Always na
 target explicitly:
 
 ```bash
-gh pr create --repo mrksbrg/3sx --base main
+gh pr create --repo codescene-research/3sx --base main
 ```
 
 Or set it once per clone, after which the default is safe:
 
 ```bash
-gh repo set-default mrksbrg/3sx
+gh repo set-default codescene-research/3sx
 ```
 
 Also: **never `git push upstream`.** That remote has a push URL configured, so the push
