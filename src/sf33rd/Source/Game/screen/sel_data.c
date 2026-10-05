@@ -144,8 +144,15 @@ const s16 Bust_Pos_Data_76[20][2] = { { 32, 16 },  { 80, 16 }, { 88, 16 }, { 80,
                                       { 80, 16 },  { 80, 16 }, { 80, 16 }, { 80, 16 }, { 80, 16 },
                                       { 96, 16 },  { 88, 16 }, { 88, 16 }, { 80, 16 }, { 96, 16 } };
 
-const s16 Width_Data_76[26] = { 80,  48, 192, 48, 48, 48,  48, 192, 192, 96,  96,  192, 112,
-                                192, 80, 128, 80, 80, 256, 48, 32,  96,  160, 384, 208, 208 };
+// effect_76_init() reads Width_Data_76[dir_old - 43] and is called with dir_old up to 85 (the round-result
+// banners in manage.c, ranking.c), so indices reach 42. The decompiled table held only the 26 entries of the
+// original symbol (PS2 0x552010, size 0x34); on the PS2 the higher indices read the zero alignment padding up
+// to PL_Color_Data (0x552050) and then PL_Color_Data's bytes as little-endian s16. Entries 26-42 reproduce
+// exactly those values, so the port keeps the original behaviour without reading past the array.
+const s16 Width_Data_76[43] = { 80,   48, 192, 48, 48, 48,  48,   192, 192, 96,   96,   192,  112,
+                                192,  80, 128, 80, 80, 256, 48,   32,  96,  160,  384,  208,  208,
+                                0,    0,  0,   0,  0,  0,   1280, 0,   773, 1024, 1284, 1280, 0,
+                                1024, 4,  3,   0 };
 
 const u8 PL_Color_Data[20] = { 0, 5, 0, 0, 5, 3, 0, 4, 4, 5, 0, 5, 0, 0, 0, 4, 4, 0, 3, 0 };
 const u8 Victory_Color_Data[20] = { 0, 53, 0, 0, 53, 49, 0, 51, 51, 53, 0, 53, 0, 0, 0, 51, 51, 0, 49, 0 };
