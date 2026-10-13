@@ -15,6 +15,8 @@
 /// the boot screens and character select itself, then hands the fight to the session.
 
 void Stress_SetOutputDir(const char* directory);
+bool Stress_SetMatchup(const char* p1, const char* p2, const char* stage);
+void Stress_SetMotions(bool enabled);
 void Stress_Begin(int seed, int check_distance, int frames);
 void Stress_Tick();
 void Stress_InjectBootInput();
