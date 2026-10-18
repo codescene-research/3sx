@@ -128,7 +128,8 @@ targeted playtesting rather than replacing it.
   the menus past boot are never reached.
 - **Specific moves only by luck.** Random inputs will land some specials; a particular
   super motion is unlikely in any given run. A clean result is not evidence that a
-  named move still works.
+  named move still works. `--motions` (below) makes specials and supers common, but
+  still does not aim for a particular one.
 - **The round never ends.** Measured: at 7200 frames - two minutes of game time - the
   session still exits with *frame limit reached*, not *match ended*. Random flailing does
   not deal enough damage for a KO, and `Stress_OnFrameAdvanced` exits the moment the
@@ -143,13 +144,37 @@ targeted playtesting rather than replacing it.
   `State` is a `GameState` then an `EffectState`, `bg_w` sits at 13648 and `stage` at +3):
   over 1,038 seeds, stages 0, 1, 18 and 19 took four fifths of the runs, stages 8 to 11
   never appeared, and 12 appeared once. A stage effect such as `eff68.c`, which only
-  `bg090.c` spawns, is therefore outside this harness however many seeds are run. There is
-  no command-line or config way to force a stage; `debug_config.stage_override` is the
-  ImGui debug menu in Debug builds only. Say so in the commit and ask for a playtest on
-  the stage.
+  `bg090.c` spawns, is therefore outside this harness however many seeds are run, unless
+  the run forces the stage with `--suite` (below).
 
 A file such as `manage.c` (round and continue flow) or `plmain2.c` (bonus stages) is
 barely touched by this harness even when the run is clean.
+
+## Forcing the matchup, and motion inputs
+
+Left alone, the harness picks characters and stage by walking the select-screen cursor
+at random, which concentrates on a few characters and stages. Two options take that
+luck out:
+
+- `--suite FILE` replaces `--seed/--seeds` with a CSV of `seed,p1,p2,stage`, one forced
+  fight per line. Characters are names (`Chun-Li`) or ids 0-19; stages are ids 0-19
+  without 17, the set the game itself draws from. An empty field leaves that choice to
+  the cursor. [`tools/stress_suites/matchups-30.csv`](../../tools/stress_suites/matchups-30.csv)
+  plays each of the 19 selectable characters at least three times, on both sides, and
+  every stage. Gill is refused: controlling him reads past the player command tables.
+- `--motions` mixes special-move motions into the fight inputs: quarter and half
+  circles, dragon punch, both charges, 360, the double quarter circles of super arts,
+  dashes, and two-button EX presses. It is off by default, and with it off the
+  generator draws exactly the random numbers it always did, so existing traces and
+  `replay_verify.sh` results are unchanged.
+
+```
+python3 tools/compare_stress_replays.py base/3sx cand/3sx \
+    --suite tools/stress_suites/matchups-30.csv --motions --frames 3600
+```
+
+Both options work through the game's own debug overrides (`debug_config.character_override`
+and `stage_override`), which exist in Debug builds only - the same builds `--stress` needs.
 
 ## How to read a clean result
 

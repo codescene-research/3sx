@@ -29,11 +29,30 @@ TraceRow = tuple[str, int, str]
 
 
 @dataclass(frozen=True)
+class Matchup:
+    """One suite line: a seed with the fight it is forced into. Empty fields
+    leave that choice to the generated select-screen inputs."""
+
+    seed: int
+    p1: str = ""
+    p2: str = ""
+    stage: str = ""
+
+    def stress_args(self) -> list[str]:
+        args = []
+        for flag, value in (("--stress-p1", self.p1), ("--stress-p2", self.p2), ("--stress-stage", self.stage)):
+            if value:
+                args += [flag, value]
+        return args
+
+
+@dataclass(frozen=True)
 class TraceRun:
     executable: Path
-    seed: int
+    matchup: Matchup
     frames: int
     timeout: int
+    motions: bool = False
 
 
 def run_trace(run: TraceRun, output_dir: Path) -> Path:
@@ -42,13 +61,17 @@ def run_trace(run: TraceRun, output_dir: Path) -> Path:
         str(run.executable.resolve()),
         "--stress",
         "--stress-seed",
-        str(run.seed),
+        str(run.matchup.seed),
         "--stress-frames",
         str(run.frames),
         "--stress-out",
         str(output_dir.resolve()),
         "--no-sound",
+        *run.matchup.stress_args(),
     ]
+
+    if run.motions:
+        command.append("--stress-motions")
 
     try:
         result = subprocess.run(
@@ -103,6 +126,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seeds", type=int, default=1, help="Number of consecutive seeds to compare.")
     parser.add_argument("--frames", type=int, default=600, help="Gameplay frames per seed.")
     parser.add_argument("--timeout", type=int, default=300, help="Maximum seconds for each run.")
+    parser.add_argument(
+        "--suite",
+        type=Path,
+        help="CSV with columns seed,p1,p2,stage: one forced matchup per line. Replaces --seed/--seeds.",
+    )
+    parser.add_argument(
+        "--motions", action="store_true", help="Mix special-move motions into the generated fight inputs."
+    )
     parser.add_argument("--output", type=Path, help="Keep traces in this directory instead of a temporary one.")
     parser.add_argument(
         "--jobs",
@@ -116,6 +147,9 @@ def parse_args() -> argparse.Namespace:
 
     if args.jobs <= 0:
         args.jobs = os.cpu_count() or 1
+
+    if args.suite is not None and not args.suite.is_file():
+        parser.error(f"suite not found: {args.suite}")
 
     for executable in (args.baseline, args.candidate):
         if not executable.is_file():
@@ -135,15 +169,35 @@ def output_directory(requested: Path | None) -> Iterator[Path]:
         yield Path(temporary)
 
 
-def replay_seed(args: argparse.Namespace, output_root: Path, seed: int) -> tuple[int, Path, Path]:
+def read_suite(path: Path) -> list[Matchup]:
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = [row for row in csv.DictReader(stream) if row["seed"].strip() and not row["seed"].startswith("#")]
+
+    suite = [Matchup(int(row["seed"]), row["p1"].strip(), row["p2"].strip(), row["stage"].strip()) for row in rows]
+
+    if len({matchup.seed for matchup in suite}) != len(suite):
+        raise SystemExit(f"{path}: every seed may appear only once, it names the output directory")
+
+    return suite
+
+
+def requested_matchups(args: argparse.Namespace) -> list[Matchup]:
+    if args.suite is not None:
+        return read_suite(args.suite)
+
+    return [Matchup(seed) for seed in range(args.seed, args.seed + args.seeds)]
+
+
+def replay_seed(args: argparse.Namespace, output_root: Path, matchup: Matchup) -> tuple[int, Path, Path]:
     """Run both builds for one seed. Returns the two trace paths, or raises."""
+    seed = matchup.seed
     seed_dir = output_root / f"seed-{seed}"
 
     if seed_dir.exists():
         shutil.rmtree(seed_dir)
 
-    baseline_run = TraceRun(args.baseline, seed, args.frames, args.timeout)
-    candidate_run = TraceRun(args.candidate, seed, args.frames, args.timeout)
+    baseline_run = TraceRun(args.baseline, matchup, args.frames, args.timeout, args.motions)
+    candidate_run = TraceRun(args.candidate, matchup, args.frames, args.timeout, args.motions)
 
     baseline_path = run_trace(baseline_run, seed_dir / "baseline")
     candidate_path = run_trace(candidate_run, seed_dir / "candidate")
@@ -168,13 +222,14 @@ def report_seed(output_root: Path, seed: int, baseline_path: Path, candidate_pat
 
 
 def compare_seeds(args: argparse.Namespace, output_root: Path) -> int:
-    seeds = range(args.seed, args.seed + args.seeds)
+    matchups = requested_matchups(args)
+    seeds = [matchup.seed for matchup in matchups]
 
     # Each seed's two runs are independent processes in their own directories, so
     # they parallelise cleanly. Results are still reported in seed order, and the
     # exit code is still that of the lowest-numbered seed that failed.
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = {seed: pool.submit(replay_seed, args, output_root, seed) for seed in seeds}
+        futures = {matchup.seed: pool.submit(replay_seed, args, output_root, matchup) for matchup in matchups}
 
         worst = 0
         for seed in seeds:

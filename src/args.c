@@ -33,8 +33,10 @@ static bool stress_combined_with_network(const NetplayArgs* netplay, bool p2p_sp
 }
 
 static bool stress_options_without_stress(const NetplayArgs* netplay) {
-    return !netplay->stress && (netplay->stress_seed != 0 || netplay->stress_check_distance != 0 ||
-                                netplay->stress_frames != 0 || netplay->stress_out != NULL);
+    return !netplay->stress &&
+           (netplay->stress_seed != 0 || netplay->stress_check_distance != 0 || netplay->stress_frames != 0 ||
+            netplay->stress_out != NULL || netplay->stress_p1 != NULL || netplay->stress_p2 != NULL ||
+            netplay->stress_stage != NULL || netplay->stress_motions);
 }
 
 static bool negative_stress_counts(const NetplayArgs* netplay) {
@@ -152,6 +154,28 @@ void init_args(int argc, const char* argv[]) {
             "stress-out",
             &args.netplay.stress_out,
             "Directory for the trace and state dumps, so runs can go in parallel.",
+            NULL,
+            0,
+            0
+        ),
+        OPT_STRING(
+            0,
+            "stress-p1",
+            &args.netplay.stress_p1,
+            "Force player 1's character, by name (Ryu, Chun-Li, ...) or by id 0-19.",
+            NULL,
+            0,
+            0
+        ),
+        OPT_STRING(0, "stress-p2", &args.netplay.stress_p2, "Force player 2's character, as --stress-p1.", NULL, 0, 0),
+        OPT_STRING(
+            0, "stress-stage", &args.netplay.stress_stage, "Force the stage, by id: 0-19 except 17.", NULL, 0, 0
+        ),
+        OPT_BOOLEAN(
+            0,
+            "stress-motions",
+            &args.netplay.stress_motions,
+            "Mix special-move motions (quarter circles, charges, 360s, supers) into the generated inputs.",
             NULL,
             0,
             0

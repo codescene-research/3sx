@@ -42,6 +42,12 @@ int SDLStressApp_Run() {
 
     Stress_SetOutputDir(netplay->stress_out);
 
+    if (!Stress_SetMatchup(netplay->stress_p1, netplay->stress_p2, netplay->stress_stage)) {
+        return 1;
+    }
+
+    Stress_SetMotions(netplay->stress_motions);
+
     if (!init()) {
         Config_Destroy();
         return 1;

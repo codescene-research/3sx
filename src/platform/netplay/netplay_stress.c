@@ -5,6 +5,7 @@
 #include "main.h"
 #include "platform/netplay/netplay_base.h"
 #include "sf33rd/AcrSDK/common/pad.h"
+#include "sf33rd/Source/Game/debug/debug_config.h"
 #include "sf33rd/Source/Game/engine/workuser.h"
 #include "sf33rd/Source/Game/menu/menu.h"
 #include "sf33rd/Source/Game/system/work_sys.h"
@@ -38,6 +39,58 @@ static SDL_IOStream* state_trace_io = NULL;
 
 // Only the first re-simulation that disagrees is worth keeping.
 static bool stress_pair_dumped = false;
+
+static bool stress_motions = false;
+
+#define MOTION_STEPS_MAX 8
+
+/// One special-move motion, written for a player facing right. It is mirrored
+/// at random when queued, because the generator does not look at which way the
+/// player actually faces: half the motions come out backwards, which still
+/// exercises the command parser.
+typedef struct {
+    u8 count;
+    u8 charge_frames; // how long the first step is held, for charge moves
+    u16 steps[MOTION_STEPS_MAX];
+} StressMotion;
+
+#define D SWK_DOWN
+#define U SWK_UP
+#define B SWK_LEFT
+#define F SWK_RIGHT
+static const StressMotion stress_motion_table[] = {
+    { 3, 0, { D, D | F, F } },                     // quarter circle forward
+    { 3, 0, { D, D | B, B } },                     // quarter circle back
+    { 3, 0, { F, D, D | F } },                     // dragon punch
+    { 5, 0, { B, D | B, D, D | F, F } },           // half circle forward
+    { 5, 0, { F, D | F, D, D | B, B } },           // half circle back
+    { 6, 0, { D, D | F, F, D, D | F, F } },        // double quarter circle forward (super arts)
+    { 6, 0, { D, D | B, B, D, D | B, B } },        // double quarter circle back (super arts)
+    { 2, 50, { D | B, F } },                       // back charge
+    { 2, 50, { D, U } },                           // down charge
+    { 7, 0, { F, D | F, D, D | B, B, U | B, U } }, // 360
+    { 3, 0, { F, 0, F } },                         // dash
+    { 3, 0, { B, 0, B } },                         // back dash
+};
+#undef D
+#undef U
+#undef B
+#undef F
+
+static const u16 stress_punches[] = { SWK_WEST, SWK_NORTH, SWK_RIGHT_SHOULDER };
+static const u16 stress_kicks[] = { SWK_SOUTH, SWK_EAST, SWK_RIGHT_TRIGGER };
+
+typedef struct {
+    u16 inputs[MOTION_STEPS_MAX];
+    u8 frames[MOTION_STEPS_MAX];
+    int count;
+    int next;
+} QueuedMotion;
+
+static QueuedMotion queued_motion[PLAYER_COUNT];
+
+static void queue_motion(int player);
+static bool next_motion_input(int player, u16* input);
 
 void Stress_Path(char* dst, size_t size, const char* relative) {
     SDL_snprintf(dst, size, "%s/%s", stress_out_dir, relative);
@@ -95,6 +148,20 @@ u16 Stress_NextInput(int player) {
         return held[player];
     }
 
+    if (stress_motions && stress_running) {
+        u16 motion_input;
+
+        if (next_motion_input(player, &motion_input)) {
+            return motion_input;
+        }
+
+        if (stress_random() % 4 == 0) {
+            queue_motion(player);
+            next_motion_input(player, &motion_input);
+            return motion_input;
+        }
+    }
+
     u16 input = directions[stress_random() % SDL_arraysize(directions)];
 
     if (stress_random() % 3 == 0) {
@@ -105,6 +172,158 @@ u16 Stress_NextInput(int player) {
     hold_frames[player] = (int)(stress_random() % 6);
 
     return input;
+}
+
+static u16 mirror_directions(u16 input) {
+    const u16 left = input & SWK_LEFT;
+    const u16 right = input & SWK_RIGHT;
+    input &= ~(SWK_LEFT | SWK_RIGHT);
+
+    if (left) {
+        input |= SWK_RIGHT;
+    }
+
+    if (right) {
+        input |= SWK_LEFT;
+    }
+
+    return input;
+}
+
+/// The finishing button: one punch or kick, or two of a kind for an EX move.
+static u16 motion_buttons() {
+    const u16* buttons = (stress_random() % 2 == 0) ? stress_punches : stress_kicks;
+    const u32 first = stress_random() % 3;
+    u16 pressed = buttons[first];
+
+    if (stress_random() % 4 == 0) {
+        pressed |= buttons[(first + 1 + stress_random() % 2) % 3];
+    }
+
+    return pressed;
+}
+
+static void queue_motion(int player) {
+    const StressMotion* motion = &stress_motion_table[stress_random() % SDL_arraysize(stress_motion_table)];
+    const bool mirrored = stress_random() % 2 == 0;
+    QueuedMotion* queue = &queued_motion[player];
+
+    for (int i = 0; i < motion->count; i++) {
+        const u16 direction = motion->steps[i];
+        queue->inputs[i] = mirrored ? mirror_directions(direction) : direction;
+        queue->frames[i] = (i == 0 && motion->charge_frames > 0) ? motion->charge_frames : 1 + stress_random() % 2;
+    }
+
+    // Dashes are two taps; everything else finishes on a button.
+    const bool is_dash = motion->count == 3 && motion->steps[1] == 0;
+
+    if (!is_dash) {
+        queue->inputs[motion->count - 1] |= motion_buttons();
+    }
+
+    queue->count = motion->count;
+    queue->next = 0;
+}
+
+/// The next frame of a queued motion, or false when none is in progress.
+static bool next_motion_input(int player, u16* input) {
+    QueuedMotion* queue = &queued_motion[player];
+
+    if (queue->next >= queue->count) {
+        return false;
+    }
+
+    *input = queue->inputs[queue->next];
+    queue->frames[queue->next] -= 1;
+
+    if (queue->frames[queue->next] == 0) {
+        queue->next += 1;
+    }
+
+    return true;
+}
+
+void Stress_SetMotions(bool enabled) {
+    stress_motions = enabled;
+}
+
+static const char* const stress_character_names[] = {
+    "Gill", "Alex", "Ryu",  "Yun",   "Dudley", "Necro",   "Hugo",   "Ibuki", "Elena",  "Oro",
+    "Yang", "Ken",  "Sean", "Urien", "Akuma",  "Chun-Li", "Makoto", "Q",     "Twelve", "Remy",
+};
+
+// The stages the game itself draws from in Random_Stage_Data: 0-19 without 17,
+// which is Q's slot. Q has no stage of his own and fights on his opponent's.
+#define STRESS_STAGE_COUNT 20
+#define STRESS_STAGE_UNUSED 17
+
+/// A name from stress_character_names, or a plain number below `limit`.
+/// Returns -1 when the text is neither.
+static int parse_stress_id(const char* text, const char* const* names, int name_count, int limit) {
+    for (int i = 0; i < name_count; i++) {
+        if (SDL_strcasecmp(text, names[i]) == 0) {
+            return i;
+        }
+    }
+
+    char* end = NULL;
+    const long value = SDL_strtol(text, &end, 10);
+
+    if (end == text || *end != '\0' || value < 0 || value >= limit) {
+        return -1;
+    }
+
+    return (int)value;
+}
+
+/// Forces the fight's characters and stage through the debug overrides the game
+/// already honours, so a seed's matchup is chosen rather than left to the cursor.
+bool Stress_SetMatchup(const char* p1, const char* p2, const char* stage) {
+#if DEBUG
+    const char* players[PLAYER_COUNT] = { p1, p2 };
+
+    for (int i = 0; i < PLAYER_COUNT; i++) {
+        if (players[i] == NULL) {
+            continue;
+        }
+
+        const int id = parse_stress_id(players[i], stress_character_names, SDL_arraysize(stress_character_names), 20);
+
+        if (id < 0) {
+            SDL_Log("Unknown character for player %d: %s", i + 1, players[i]);
+            return false;
+        }
+
+        // Gill is the boss, not on the select screen, and controlling him reads
+        // past the end of the player command tables.
+        if (id == 0) {
+            SDL_Log("Gill can't be a player character.");
+            return false;
+        }
+
+        debug_config.character_override[i] = id + 1;
+    }
+
+    if (stage != NULL) {
+        const int id = parse_stress_id(stage, NULL, 0, STRESS_STAGE_COUNT);
+
+        if (id < 0 || id == STRESS_STAGE_UNUSED) {
+            SDL_Log("Unknown stage: %s", stage);
+            return false;
+        }
+
+        debug_config.stage_override = id + 1;
+    }
+
+    return true;
+#else
+    if (p1 != NULL || p2 != NULL || stage != NULL) {
+        SDL_Log("Forcing a matchup needs a Debug build.");
+        return false;
+    }
+
+    return true;
+#endif
 }
 
 void Stress_SetOutputDir(const char* directory) {

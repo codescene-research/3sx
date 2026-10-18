@@ -14,6 +14,10 @@ typedef struct NetplayArgs {
     int stress_check_distance;
     int stress_frames;
     const char* stress_out;
+    const char* stress_p1;
+    const char* stress_p2;
+    const char* stress_stage;
+    bool stress_motions;
 } NetplayArgs;
 #endif
 
