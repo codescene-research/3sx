@@ -1,0 +1,7 @@
+# Mull defaults (cxx_default = increment, arithmetic, comparison, boundary)
+# plus removal of calls to void functions. Only the decompiled game code.
+mutators:
+  - cxx_default
+  - cxx_remove_void_call
+includePaths:
+  - '.*/src/sf33rd/.*'
