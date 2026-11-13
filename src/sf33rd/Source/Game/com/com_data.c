@@ -1722,8 +1722,13 @@ const u8 Denjin_Data[4][16] = { { 56, 56, 56, 56, 56, 56, 56, 57, 57, 57, 57, 58
                                 { 56, 56, 56, 56, 57, 57, 57, 57, 57, 58, 58, 58, 59, 59, 60, 60 },
                                 { 56, 56, 57, 57, 57, 57, 57, 58, 58, 58, 58, 59, 59, 59, 60, 60 } };
 
-const s16 Correct_Cont_Time_Data[2][16] = { { 0, 90, 65, 85, 65, 70, 70, 70, 75, 75, 75, 85, 85, 85, 85, 85 },
-                                            { 0, 85, 55, 80, 55, 60, 60, 60, 65, 65, 65, 70, 70, 70, 70, 70 } };
+// sel_pl.c reads Correct_Cont_Time_Data[zz][xx] with xx clamped to 16, one past the 16 entries of the
+// original symbol. On the PS2 (SLPM_656.21, table at 0x484f80) [0][16] read [1][0], i.e. 0, and [1][16]
+// read the first two bytes of the following VS_Diagonal_Shell_Data (08 09), i.e. 2312 as little-endian s16.
+// Column 16 reproduces exactly those values, so the port keeps the original behaviour without reading
+// past the array.
+const s16 Correct_Cont_Time_Data[2][17] = { { 0, 90, 65, 85, 65, 70, 70, 70, 75, 75, 75, 85, 85, 85, 85, 85, 0 },
+                                            { 0, 85, 55, 80, 55, 60, 60, 60, 65, 65, 65, 70, 70, 70, 70, 70, 2312 } };
 
 const u8 VS_Diagonal_Shell_Data[8] = { 8, 9, 10, 11, 12, 13, 14, 14 };
 
